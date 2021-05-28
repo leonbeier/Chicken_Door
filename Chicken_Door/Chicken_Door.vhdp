@@ -1,0 +1,249 @@
+Main
+(
+    BTN            : IN  STD_LOGIC; --Press to enable PC connection instead of Wifi
+    
+    LED            : OUT STD_LOGIC_VECTOR(7 downto 0);
+    
+    RX             : IN  STD_LOGIC;
+    TX             : OUT STD_LOGIC;
+    
+    WiFi_tx        : IN  STD_LOGIC;
+    WiFi_rx        : OUT STD_LOGIC;
+    
+    Motor_1        : OUT STD_LOGIC_VECTOR(1 downto 0);
+    Motor_2        : OUT STD_LOGIC_VECTOR(1 downto 0);
+    
+    Stop_Top       : IN STD_LOGIC;
+    Stop_Bottom    : IN STD_LOGIC;
+    
+    RTC_SDA        : INOUT STD_LOGIC := 'Z';
+    RTC_SCL        : INOUT STD_LOGIC := 'Z';
+    
+    Switch         : IN STD_LOGIC;
+)
+{
+    LED(0) <= BTN;
+    LED(1) <= Stop_Top;
+    LED(2) <= Stop_Bottom;
+    LED(3) <= Switch;
+    
+    TX <= WiFi_tx;
+    WiFi_rx <= RX;
+    
+    UART_RX <= WiFi_tx when BTN = '1' else RX;
+    
+    SIGNAL Position_Top : STD_LOGIC := '0';
+    SIGNAL UP   : STD_LOGIC := '0';
+    SIGNAL DOWN : STD_LOGIC := '0';
+    
+    Motor_1(0) <= UP   when Stop_Top = '1' else '0';
+    Motor_1(1) <= DOWN when Stop_Bottom = '0' else '0';
+    
+    Motor_2(0) <= UP   when Stop_Top = '1' else '0';
+    Motor_2(1) <= DOWN when Stop_Bottom = '0' else '0';
+    
+    ISSP_probe <= STD_LOGIC_VECTOR(TO_UNSIGNED(up_hour*1000000+up_min*10000+down_hour*100+down_min, ISSP_probe'LENGTH));
+    
+    SIGNAL ISSP_probe  : std_logic_vector (31 downto 0) := (others => 'X');
+    NewComponent ISSP
+    (
+        probe  =>ISSP_probe,
+    );
+    
+    ISSP1_probe <= STD_LOGIC_VECTOR(TO_UNSIGNED(RTC_Time_Out.Hour10*1000 + RTC_Time_Out.Hour*100 + RTC_Time_Out.Minute10*10 + RTC_Time_Out.Minute, ISSP_probe'LENGTH));
+    
+    SIGNAL ISSP1_probe  : std_logic_vector (31 downto 0) := (others => 'X');
+    NewComponent ISSP
+    (
+        probe  =>ISSP1_probe,
+    );
+    
+    SIGNAL up_hour : NATURAL range 0 to 24 := 24;   --< 24 = enable
+    SIGNAL up_min  : NATURAL range 0 to 59 := 0;
+    
+    SIGNAL down_hour : NATURAL range 0 to 24 := 24; --< 24 = enable
+    SIGNAL down_min  : NATURAL range 0 to 59 := 0;
+    
+    Process ()
+    {
+        Thread
+        {
+            While(Switch = '1')
+            {
+                Wait(100ms);
+            }
+            Change_Position <= '1';
+            While(Change_Busy = '0'){}
+            While(Change_Busy = '1'){}
+            Change_Position <= '0';
+            While(Switch = '0')
+            {
+                Wait(100ms);
+            }
+        }
+        
+        Thread
+        {
+            SIGNAL Change_Position : STD_LOGIC := '0';
+            SIGNAL Change_Busy     : STD_LOGIC := '0';
+            While(Change_Position = '0'){}
+            Change_Busy <= '1';
+            UP          <= NOT Position_Top;
+            DOWN        <= Position_Top;
+            While((Stop_Top = '1' AND Position_Top = '0') OR (Stop_Bottom = '0' AND Position_Top = '1')){}
+            Change_Busy <= '0';
+            UP          <= '0';
+            DOWN        <= '0';
+            Position_Top <= NOT Position_Top;
+            While(Change_Position = '1'){}
+        }
+        
+        Thread
+        {
+            SIGNAL rx_byte     : STD_LOGIC_VECTOR(7 downto 0);
+            VARIABLE operation : NATURAL range 0 to 5 := 0; --0 = none, 1 = Up, 2 = Down, 3 = Set Time, 4 = Open Time, 5 = Close Time
+            VARIABLE time_hour : STD_LOGIC := '0';
+            VARIABLE hour10 : NATURAL range 0 to 2;
+            VARIABLE hour   : NATURAL range 0 to 9;
+            VARIABLE min10  : NATURAL range 0 to 5;
+            VARIABLE min    : NATURAL range 0 to 9;
+            NewFunction read (rx_byte, UART_RX_Data, UART_RX_Busy);
+            If(operation = 0)
+            {
+                operation := TO_INTEGER(UNSIGNED(rx_byte));
+                time_hour := '0';
+            }
+            Elsif(operation = 3)
+            {
+                If(time_hour = '0')
+                {
+                    hour10 := TO_INTEGER(UNSIGNED(rx_byte))/10;
+                    Step { hour := TO_INTEGER(UNSIGNED(rx_byte)) - hour10*10; }
+                    time_hour := '1';
+                }
+                Else
+                {
+                    min10 := TO_INTEGER(UNSIGNED(rx_byte))/10;
+                    Step { min := TO_INTEGER(UNSIGNED(rx_byte)) - min10*10; }
+                    
+                    RTC_Config_Time.Hour10 <= hour10;
+                    RTC_Config_Time.Hour   <= hour;
+                    RTC_Config_Time.Minute10 <= min10;
+                    RTC_Config_Time.Minute   <= min;
+                    RTC_Config <= '1';
+                    Step { RTC_Config <= '0'; }
+                    
+                    operation := 0;
+                }
+            }
+            Elsif(operation = 4)
+            {
+                If(time_hour = '0')
+                {
+                    up_hour <= TO_INTEGER(UNSIGNED(rx_byte));
+                    time_hour := '1';
+                }
+                Else
+                {
+                    up_min <= TO_INTEGER(UNSIGNED(rx_byte));
+                    operation := 0;
+                }
+            }
+            Elsif(operation = 5)
+            {
+                If(time_hour = '0')
+                {
+                    down_hour <= TO_INTEGER(UNSIGNED(rx_byte));
+                    time_hour := '1';
+                }
+                Else
+                {
+                    down_min <= TO_INTEGER(UNSIGNED(rx_byte));
+                    operation := 0;
+                }
+            }
+            
+            If(operation = 1)
+            {
+                If(Position_Top = '0')
+                {
+                    Change_Position <= '1';
+                    While(Change_Busy = '0'){}
+                    While(Change_Busy = '1'){}
+                    Change_Position <= '0';
+                }
+                operation := 0;
+            }
+            Elsif(operation = 2)
+            {
+                If(Position_Top = '1')
+                {
+                    Change_Position <= '1';
+                    While(Change_Busy = '0'){}
+                    While(Change_Busy = '1'){}
+                    Change_Position <= '0';
+                }
+                operation := 0;
+            }
+        }
+        
+        Thread
+        {
+            While(up_time = '0'){}
+            If(Position_Top = '0')
+            {
+                Change_Position <= '1';
+                While(Change_Busy = '0'){}
+                While(Change_Busy = '1'){}
+                Change_Position <= '0';
+            }
+            While(up_time = '1'){}
+        }
+        
+        Thread
+        {
+            While(down_time = '0'){}
+            If(Position_Top = '1')
+            {
+                Change_Position <= '1';
+                While(Change_Busy = '0'){}
+                While(Change_Busy = '1'){}
+                Change_Position <= '0';
+            }
+            While(down_time = '1'){}
+        }
+    }
+    
+    SIGNAL up_time   : STD_LOGIC := '0';
+    up_time <= '1' when RTC_Config_Time.Hour10*10+RTC_Config_Time.Hour = up_hour AND RTC_Config_Time.Minute10*10+RTC_Config_Time.Minute = up_min else '0';
+    
+    SIGNAL down_time : STD_LOGIC := '0';
+    down_time <= '1' when RTC_Config_Time.Hour10*10+RTC_Config_Time.Hour = down_hour AND RTC_Config_Time.Minute10*10+RTC_Config_Time.Minute = down_min else '0';
+    
+    SIGNAL UART_RX            : STD_LOGIC := '0';
+    SIGNAL UART_RX_Busy       : STD_LOGIC := '0';
+    SIGNAL UART_RX_Data       : STD_LOGIC_VECTOR (8-1 DOWNTO 0) := (others => '0');
+    NewComponent UART_Interface
+    (
+        CLK_Frequency => 12000000,
+        Baud_Rate     => 115200,
+
+        RX            => UART_RX,
+        RX_Busy       => UART_RX_Busy,
+        RX_Data       => UART_RX_Data,
+    );
+    
+    SIGNAL RTC_Config        : STD_LOGIC := '0';
+    SIGNAL RTC_Config_Time   : Date_Time_Type;
+    SIGNAL RTC_Time_Out      : Date_Time_Type;
+    NewComponent DS3231_Interface
+    (
+        CLK_Frequency => 12000000,
+
+        SDA           => RTC_SDA,
+        SCL           => RTC_SCL,
+        Config        => RTC_Config,
+        Config_Time   => RTC_Config_Time,
+        Time_Out      => RTC_Time_Out,
+    );
+}
