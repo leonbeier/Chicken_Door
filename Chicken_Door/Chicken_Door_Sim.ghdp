@@ -1,0 +1,95 @@
+Component Chicken_Door_tb()
+{
+    SIGNAL finished : STD_LOGIC:= '0';
+    CONSTANT period_time : TIME := 83333 ps;
+
+    Process Sim_finished()
+    {
+        wait for 100 ms;
+        finished <= '1';
+        wait;
+    }
+
+    NewComponent Chicken_Door
+    (
+        BTN => BTN,
+        LED => LED,
+        RX => RX,
+        TX => TX,
+        WiFi_tx => WiFi_tx,
+        WiFi_rx => WiFi_rx,
+        Motor_1 => Motor_1,
+        Motor_2 => Motor_2,
+        Stop_Top => Stop_Top,
+        Stop_Bottom => Stop_Bottom,
+        RTC_SDA => RTC_SDA,
+        RTC_SCL => RTC_SCL,
+        Switch => Switch,
+        CLK => CLK,
+    );
+
+    SIGNAL BTN : STD_LOGIC ;
+    SIGNAL LED : STD_LOGIC_VECTOR (7 downto 0);
+    SIGNAL RX : STD_LOGIC ;
+    SIGNAL TX : STD_LOGIC ;
+    SIGNAL WiFi_tx : STD_LOGIC ;
+    SIGNAL WiFi_rx : STD_LOGIC ;
+    SIGNAL Motor_1 : STD_LOGIC_VECTOR (1 downto 0);
+    SIGNAL Motor_2 : STD_LOGIC_VECTOR (1 downto 0);
+    SIGNAL Stop_Top : STD_LOGIC ;
+    SIGNAL Stop_Bottom : STD_LOGIC ;
+    SIGNAL RTC_SDA : STD_LOGIC  := 'Z';
+    SIGNAL RTC_SCL : STD_LOGIC  := 'Z';
+    SIGNAL Switch : STD_LOGIC := '0';
+    SIGNAL CLK : STD_LOGIC := '0';
+
+
+    Process Sim_BTN()
+    {
+        While(finished /= '1')
+        {
+            BTN <= '0';
+            wait for 10 us;
+            wait;
+        }
+        wait;
+    }
+
+    Process Sim_RX()
+    {
+        wait until rising_edge(CLK);
+        Thread
+        {
+            NewFunction write (STD_LOGIC_VECTOR(TO_UNSIGNED(4, 8)), UART_Interface_TX_Data, UART_Interface_TX_Busy, UART_Interface_TX_Enable);
+            NewFunction write (STD_LOGIC_VECTOR(TO_UNSIGNED(16, 8)), UART_Interface_TX_Data, UART_Interface_TX_Busy, UART_Interface_TX_Enable);
+            NewFunction write (STD_LOGIC_VECTOR(TO_UNSIGNED(57, 8)), UART_Interface_TX_Data, UART_Interface_TX_Busy, UART_Interface_TX_Enable);
+            wait;
+        }
+    }
+
+    Process Sim_CLK()
+    {
+        While(finished /= '1')
+        {
+            CLK <= '0';
+            wait for period_time/2;
+            CLK <= '1';
+            wait for period_time/2;
+        }
+        wait;
+    }
+    
+    SIGNAL UART_Interface_TX_Enable     : STD_LOGIC := '0';
+    SIGNAL UART_Interface_TX_Busy       : STD_LOGIC := '0';
+    SIGNAL UART_Interface_TX_Data       : STD_LOGIC_VECTOR (8-1 DOWNTO 0) := (others => '0');
+    NewComponent UART_Interface
+    (
+        CLK_Frequency => 12000000,
+        Baud_Rate     => 115200,
+        
+        TX            => RX,
+        TX_Enable     =>UART_Interface_TX_Enable,
+        TX_Busy       =>UART_Interface_TX_Busy,
+        TX_Data       =>UART_Interface_TX_Data,
+    );
+}

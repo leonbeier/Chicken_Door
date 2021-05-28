@@ -58,6 +58,12 @@ Main
         probe  =>ISSP1_probe,
     );
     
+    SIGNAL ISSP2_probe  : std_logic_vector (31 downto 0) := (others => 'X');
+    NewComponent ISSP
+    (
+        probe  =>ISSP2_probe,
+    );
+    
     SIGNAL up_hour : NATURAL range 0 to 24 := 24;   --< 24 = enable
     SIGNAL up_min  : NATURAL range 0 to 59 := 0;
     
@@ -110,8 +116,11 @@ Main
             NewFunction read (rx_byte, UART_RX_Data, UART_RX_Busy);
             If(operation = 0)
             {
-                operation := TO_INTEGER(UNSIGNED(rx_byte));
-                time_hour := '0';
+                If(TO_INTEGER(UNSIGNED(rx_byte)) < 6)
+                {
+                    operation := TO_INTEGER(UNSIGNED(rx_byte));
+                    time_hour := '0';
+                }
             }
             Elsif(operation = 3)
             {
@@ -186,6 +195,12 @@ Main
                 operation := 0;
             }
         }
+        
+        ISSP2_probe(7 downto 0) <= rx_byte;
+        
+        ISSP2_probe(15 downto 8) <= STD_LOGIC_VECTOR(TO_UNSIGNED(operation, 8));
+        
+        ISSP_probe(23 downto 16) <= UART_RX_Data;
         
         Thread
         {

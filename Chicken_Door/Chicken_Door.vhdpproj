@@ -46,6 +46,9 @@
   <Items xsi:type="ProjectFileVHDP">
     <Header>Chicken_Door.vhdp</Header>
   </Items>
+  <Items xsi:type="ProjectFileGHDP">
+    <Header>Chicken_Door_Sim.ghdp</Header>
+  </Items>
   <CruviHSExtensions>
     <string xsi:nil="true" />
   </CruviHSExtensions>
